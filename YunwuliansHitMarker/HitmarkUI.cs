@@ -17,11 +17,13 @@ namespace HitMarkerPlugin
             public Vector2 basePosition;
             public bool isKillMarker;
             public string markerType;
-            public float rotation; // 添加旋转字段
+            public float rotation;
+            public Coroutine coroutine;
         }
 
-        private Marker currentMarker;
-        private Coroutine markerCoroutine;
+        // 独立的命中标记和击杀标记
+        private Marker currentHitMarker;
+        private Marker currentKillMarker;
 
         private const float HIT_MARKER_DURATION = 0.2f;
         private const float KILL_MARKER_DURATION = 1f;
@@ -38,14 +40,14 @@ namespace HitMarkerPlugin
                 texture = HitMarkerPlugin.HitMarkerTexture,
                 showTime = Time.time,
                 alpha = 1f,
-                basePosition = new Vector2(0.5f, 0.5f), // 屏幕中心
+                basePosition = new Vector2(0.5f, 0.5f),
                 isKillMarker = false,
                 markerType = "hit",
-                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f), // 增大缩放范围 90%-125%
-                rotation = UnityEngine.Random.Range(-10f, 10f) // 增大旋转范围 -10° 到 10°
+                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f),
+                rotation = UnityEngine.Random.Range(-10f, 10f)
             };
 
-            ShowMarker(marker, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
             ExternalAudioPlayer.Instance.PlayHitSound();
         }
 
@@ -55,15 +57,15 @@ namespace HitMarkerPlugin
             {
                 texture = HitMarkerPlugin.KillMarkerTexture,
                 showTime = Time.time,
-                alpha = 0f, // 初始完全透明
+                alpha = 0f,
                 basePosition = killMarkerBasePosition,
                 isKillMarker = true,
                 markerType = "kill",
-                scale = Vector2.one * 3f, // 初始放大 300%
+                scale = Vector2.one * 3f,
                 rotation = 0f
             };
 
-            ShowMarker(marker, KILL_MARKER_DURATION);
+            ShowKillMarkerInternal(marker, KILL_MARKER_DURATION);
             ExternalAudioPlayer.Instance.PlayKillSound();
         }
 
@@ -77,11 +79,11 @@ namespace HitMarkerPlugin
                 basePosition = new Vector2(0.5f, 0.5f),
                 isKillMarker = false,
                 markerType = "headshot",
-                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f), // 增大缩放范围
-                rotation = UnityEngine.Random.Range(-10f, 10f) // 增大旋转范围
+                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f),
+                rotation = UnityEngine.Random.Range(-10f, 10f)
             };
 
-            ShowMarker(marker, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
             ExternalAudioPlayer.Instance.PlayHeadshotSound();
         }
 
@@ -91,15 +93,15 @@ namespace HitMarkerPlugin
             {
                 texture = HitMarkerPlugin.HeadshotKillMarkerTexture,
                 showTime = Time.time,
-                alpha = 0f, // 初始完全透明
+                alpha = 0f,
                 basePosition = killMarkerBasePosition,
                 isKillMarker = true,
                 markerType = "headshot_kill",
-                scale = Vector2.one * 3f, // 初始放大 300%
+                scale = Vector2.one * 3f,
                 rotation = 0f
             };
 
-            ShowMarker(marker, HEADSHOT_KILL_MARKER_DURATION);
+            ShowKillMarkerInternal(marker, HEADSHOT_KILL_MARKER_DURATION);
             ExternalAudioPlayer.Instance.PlayHeadshotKillSound();
         }
 
@@ -113,11 +115,11 @@ namespace HitMarkerPlugin
                 basePosition = new Vector2(0.5f, 0.5f),
                 isKillMarker = false,
                 markerType = "armor_hit",
-                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f), // 增大缩放范围
-                rotation = UnityEngine.Random.Range(-10f, 10f) // 增大旋转范围
+                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f),
+                rotation = UnityEngine.Random.Range(-10f, 10f)
             };
 
-            ShowMarker(marker, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
             ExternalAudioPlayer.Instance.PlayArmorHitSound();
         }
 
@@ -131,11 +133,11 @@ namespace HitMarkerPlugin
                 basePosition = new Vector2(0.5f, 0.5f),
                 isKillMarker = false,
                 markerType = "armor_break",
-                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f), // 增大缩放范围
-                rotation = UnityEngine.Random.Range(-10f, 10f) // 增大旋转范围
+                scale = Vector2.one * UnityEngine.Random.Range(0.9f, 1.25f),
+                rotation = UnityEngine.Random.Range(-10f, 10f)
             };
 
-            ShowMarker(marker, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
             ExternalAudioPlayer.Instance.PlayArmorBreakSound();
         }
 
@@ -147,76 +149,98 @@ namespace HitMarkerPlugin
             {
                 texture = HitMarkerPlugin.KillStreakTextures[streak],
                 showTime = Time.time,
-                alpha = 0f, // 初始完全透明
+                alpha = 0f,
                 basePosition = killMarkerBasePosition,
                 isKillMarker = true,
                 markerType = $"kill_streak_{streak}",
-                scale = Vector2.one * 3f, // 初始放大 300%
+                scale = Vector2.one * 3f,
                 rotation = 0f
             };
 
-            ShowMarker(marker, KILL_STREAK_DURATION);
+            ShowKillMarkerInternal(marker, KILL_STREAK_DURATION);
             ExternalAudioPlayer.Instance.PlayKillStreakSound(streak);
         }
 
-        private void ShowMarker(Marker marker, float duration)
+        private void ShowHitMarkerInternal(Marker marker, float duration)
         {
-            // 如果已经有标记在显示，停止之前的协程
-            if (markerCoroutine != null)
+            // 如果已经有命中标记在显示，停止之前的协程
+            if (currentHitMarker != null && currentHitMarker.coroutine != null)
             {
-                StopCoroutine(markerCoroutine);
+                StopCoroutine(currentHitMarker.coroutine);
             }
 
-            currentMarker = marker;
-            markerCoroutine = StartCoroutine(MarkerAnimation(duration));
+            currentHitMarker = marker;
+            currentHitMarker.coroutine = StartCoroutine(HitMarkerAnimation(duration));
         }
 
-        private IEnumerator MarkerAnimation(float duration)
+        private void ShowKillMarkerInternal(Marker marker, float duration)
+        {
+            // 如果已经有击杀标记在显示，停止之前的协程
+            if (currentKillMarker != null && currentKillMarker.coroutine != null)
+            {
+                StopCoroutine(currentKillMarker.coroutine);
+            }
+
+            currentKillMarker = marker;
+            currentKillMarker.coroutine = StartCoroutine(KillMarkerAnimation(duration));
+        }
+
+        private IEnumerator HitMarkerAnimation(float duration)
         {
             float startTime = Time.time;
             float endTime = startTime + duration;
 
-            while (Time.time < endTime)
+            while (Time.time < endTime && currentHitMarker != null)
             {
                 float progress = (Time.time - startTime) / duration;
 
-                if (currentMarker != null)
+                // 淡出效果（只在最后0.2秒开始淡出）
+                float fadeStart = 0.6f;
+                if (progress > fadeStart)
                 {
-                    // 淡出效果（只在最后0.2秒开始淡出）
-                    float fadeStart = currentMarker.isKillMarker ? 0.9f : 0.6f; // 击杀标记在最后10%开始淡出
-                    if (progress > fadeStart)
-                    {
-                        currentMarker.alpha = 1f - ((progress - fadeStart) / (1f - fadeStart));
-                    }
-                    else
-                    {
-                        currentMarker.alpha = 1f;
-                    }
-
-                    // 击杀标记的特殊效果
-                    if (currentMarker.isKillMarker)
-                    {
-                        ApplyKillMarkerEffects(progress);
-                    }
+                    currentHitMarker.alpha = 1f - ((progress - fadeStart) / (1f - fadeStart));
+                }
+                else
+                {
+                    currentHitMarker.alpha = 1f;
                 }
 
                 yield return null;
             }
 
-            currentMarker = null;
-            markerCoroutine = null;
+            currentHitMarker = null;
+        }
+
+        private IEnumerator KillMarkerAnimation(float duration)
+        {
+            float startTime = Time.time;
+            float endTime = startTime + duration;
+
+            while (Time.time < endTime && currentKillMarker != null)
+            {
+                float progress = (Time.time - startTime) / duration;
+
+                // 击杀标记的特殊效果
+                ApplyKillMarkerEffects(progress);
+
+                // 淡出效果（只在最后10%开始淡出）
+                float fadeStart = 0.9f;
+                if (progress > fadeStart)
+                {
+                    currentKillMarker.alpha = 1f - ((progress - fadeStart) / (1f - fadeStart));
+                }
+
+                yield return null;
+            }
+
+            currentKillMarker = null;
         }
 
         private void ApplyKillMarkerEffects(float progress)
         {
-            if (currentMarker == null) return;
+            if (currentKillMarker == null) return;
 
-            // 击杀标记动画分为三个阶段：
-            // 1. 0-0.05秒：快速飞入 + 缩放缩小 + 淡入
-            // 2. 0.05-0.15秒：到位后的震颤效果
-            // 3. 0.15秒后：保持稳定直到淡出（现在稳定阶段延长到1.5秒）
-
-            if (progress < 0.05f) // 0.05秒飞入，按2秒总时长调整比例
+            if (progress < 0.05f)
             {
                 // 第一阶段：快速飞入动画
                 float flyProgress = progress / 0.05f;
@@ -224,16 +248,16 @@ namespace HitMarkerPlugin
 
                 // 缩放效果：从300%缩小到100%
                 float scale = 3f - (flyProgress * 2f);
-                currentMarker.scale = Vector2.one * scale;
+                currentKillMarker.scale = Vector2.one * scale;
 
                 // 淡入效果：快速淡入
-                currentMarker.alpha = flyProgress * 2f; // 快速淡入，0.05秒就完全显示
-                if (currentMarker.alpha > 1f) currentMarker.alpha = 1f;
+                currentKillMarker.alpha = flyProgress * 2f;
+                if (currentKillMarker.alpha > 1f) currentKillMarker.alpha = 1f;
 
                 // 位置动画：从下方不远的位置飞入
-                Vector2 targetPosition = GetScreenPosition(currentMarker.basePosition);
-                Vector2 startPosition = targetPosition + new Vector2(0, Screen.height * 0.05f); // 只从下方5%屏幕高度开始
-                currentMarker.position = Vector2.Lerp(startPosition, targetPosition, flyProgress);
+                Vector2 targetPosition = GetScreenPosition(currentKillMarker.basePosition);
+                Vector2 startPosition = targetPosition + new Vector2(0, Screen.height * 0.05f);
+                currentKillMarker.position = Vector2.Lerp(startPosition, targetPosition, flyProgress);
             }
             else if (progress < 0.15f)
             {
@@ -241,29 +265,29 @@ namespace HitMarkerPlugin
                 float shakeProgress = (progress - 0.05f) / 0.1f;
 
                 // 基本位置
-                Vector2 basePos = GetScreenPosition(currentMarker.basePosition);
+                Vector2 basePos = GetScreenPosition(currentKillMarker.basePosition);
 
                 // 震颤强度快速衰减
-                float shakeIntensity = (1f - shakeProgress) * 8f; // 减小震颤强度
+                float shakeIntensity = (1f - shakeProgress) * 8f;
 
                 // 使用正弦波生成震颤
-                float shakeTime = Time.time * 40f; // 提高频率
+                float shakeTime = Time.time * 40f;
                 float shakeX = Mathf.Sin(shakeTime * 1.2f) * shakeIntensity;
                 float shakeY = Mathf.Cos(shakeTime * 0.8f) * shakeIntensity;
 
-                currentMarker.position = basePos + new Vector2(shakeX, shakeY);
+                currentKillMarker.position = basePos + new Vector2(shakeX, shakeY);
 
-                // 缩放震颤（幅度减小）
-                currentMarker.scale = Vector2.one * (1f + Mathf.Sin(shakeTime * 1.5f) * 0.05f); // 减小缩放震颤幅度
+                // 缩放震颤
+                currentKillMarker.scale = Vector2.one * (1f + Mathf.Sin(shakeTime * 1.5f) * 0.05f);
 
                 // 旋转震颤 ±10度
-                currentMarker.rotation = Mathf.Sin(shakeTime * 1.0f) * 10f; // 正负10度旋转
+                currentKillMarker.rotation = Mathf.Sin(shakeTime * 1.0f) * 10f;
             }
             else
             {
-                currentMarker.scale = Vector2.one;
-                currentMarker.position = GetScreenPosition(currentMarker.basePosition);
-                currentMarker.rotation = 0f;
+                currentKillMarker.scale = Vector2.one;
+                currentKillMarker.position = GetScreenPosition(currentKillMarker.basePosition);
+                currentKillMarker.rotation = 0f;
             }
         }
 
@@ -277,15 +301,24 @@ namespace HitMarkerPlugin
 
         private void OnGUI()
         {
-            if (currentMarker == null || currentMarker.texture == null) return;
+            // 绘制命中标记（如果有）
+            DrawMarker(currentHitMarker);
+
+            // 绘制击杀标记（如果有）
+            DrawMarker(currentKillMarker);
+        }
+
+        private void DrawMarker(Marker marker)
+        {
+            if (marker == null || marker.texture == null) return;
 
             // 计算绘制位置和尺寸
-            Vector2 drawPosition = currentMarker.isKillMarker ?
-                currentMarker.position :
-                GetScreenPosition(currentMarker.basePosition);
+            Vector2 drawPosition = marker.isKillMarker ?
+                marker.position :
+                GetScreenPosition(marker.basePosition);
 
-            float baseSize = currentMarker.isKillMarker ? 300f : 50f;
-            float size = baseSize * currentMarker.scale.x;
+            float baseSize = marker.isKillMarker ? 300f : 50f;
+            float size = baseSize * marker.scale.x;
             Rect drawRect = new Rect(
                 drawPosition.x - size * 0.5f,
                 drawPosition.y - size * 0.5f,
@@ -295,10 +328,10 @@ namespace HitMarkerPlugin
 
             // 应用透明度
             Color originalColor = GUI.color;
-            GUI.color = new Color(1f, 1f, 1f, currentMarker.alpha);
+            GUI.color = new Color(1f, 1f, 1f, marker.alpha);
 
             // 应用旋转
-            if (Mathf.Abs(currentMarker.rotation) > 0.01f)
+            if (Mathf.Abs(marker.rotation) > 0.01f)
             {
                 Matrix4x4 matrixBackup = GUI.matrix;
 
@@ -306,8 +339,8 @@ namespace HitMarkerPlugin
                 Vector2 pivotPoint = new Vector2(drawRect.x + drawRect.width * 0.5f, drawRect.y + drawRect.height * 0.5f);
 
                 // 应用旋转矩阵
-                GUIUtility.RotateAroundPivot(currentMarker.rotation, pivotPoint);
-                GUI.DrawTexture(drawRect, currentMarker.texture);
+                GUIUtility.RotateAroundPivot(marker.rotation, pivotPoint);
+                GUI.DrawTexture(drawRect, marker.texture);
 
                 // 恢复矩阵
                 GUI.matrix = matrixBackup;
@@ -315,7 +348,7 @@ namespace HitMarkerPlugin
             else
             {
                 // 不旋转，直接绘制
-                GUI.DrawTexture(drawRect, currentMarker.texture);
+                GUI.DrawTexture(drawRect, marker.texture);
             }
 
             // 恢复GUI颜色
