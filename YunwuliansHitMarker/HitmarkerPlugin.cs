@@ -23,6 +23,11 @@ namespace HitMarkerPlugin
         public static ConfigEntry<float> KillMarkerVolume;
         public static ConfigEntry<bool> ShowTestWindow;
         public static ConfigEntry<KeyboardShortcut> TestWindowToggleKey;
+        public static ConfigEntry<float> KillMarkerPositionX;
+        public static ConfigEntry<float> KillMarkerPositionY;
+        public static ConfigEntry<bool> UseOriginalIconSize;
+        public static ConfigEntry<float> KillMarkerSizeScale;
+        public static ConfigEntry<float> HitMarkerSizeScale;
 
         // 资源
         public static Texture2D HitMarkerTexture;
@@ -100,6 +105,12 @@ namespace HitMarkerPlugin
             EnableKillMarker = Config.Bind("通用", "启用击杀提示", true, "是否显示击杀提示");
             HitMarkerVolume = Config.Bind("音效", "命中音效音量", 0.8f, new ConfigDescription("命中音效音量", new AcceptableValueRange<float>(0f, 1f)));
             KillMarkerVolume = Config.Bind("音效", "击杀音效音量", 1.0f, new ConfigDescription("击杀音效音量", new AcceptableValueRange<float>(0f, 1f)));
+            KillMarkerPositionX = Config.Bind("位置", "击杀图标X位置", 0.5f, new ConfigDescription("击杀图标的水平位置 (0-1)", new AcceptableValueRange<float>(0f, 1f)));
+            KillMarkerPositionY = Config.Bind("位置", "击杀图标Y位置", 0.87f, new ConfigDescription("击杀图标的垂直位置 (0-1)", new AcceptableValueRange<float>(0f, 1f)));
+            UseOriginalIconSize = Config.Bind("图标", "使用原始图标大小", true, "是否使用图标的原始大小（否则使用统一缩放）");
+            KillMarkerSizeScale = Config.Bind("图标", "击杀图标缩放", 1.0f, new ConfigDescription("击杀图标的缩放系数", new AcceptableValueRange<float>(0.1f, 3f)));
+            HitMarkerSizeScale = Config.Bind("图标", "命中图标缩放", 1.0f, new ConfigDescription("命中图标的缩放系数", new AcceptableValueRange<float>(0.1f, 3f)));
+
             ShowTestWindow = Config.Bind("测试", "显示测试窗口", false, "是否显示测试窗口");
             TestWindowToggleKey = Config.Bind("测试", "测试窗口切换按键", new KeyboardShortcut(KeyCode.F10), "切换测试窗口显示/隐藏的按键");
         }
@@ -111,11 +122,8 @@ namespace HitMarkerPlugin
                 string pluginPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
                 string resourcePath = Path.Combine(pluginPath, "resource");
                 string texturePath = Path.Combine(resourcePath, "texture");
-                string soundPath = Path.Combine(resourcePath, "sound");
 
-                // 确保目录存在
                 Directory.CreateDirectory(texturePath);
-                Directory.CreateDirectory(soundPath);
 
                 // 加载基础图标
                 HitMarkerTexture = LoadTexture(Path.Combine(texturePath, "hit_marker.png"));
@@ -125,7 +133,7 @@ namespace HitMarkerPlugin
                 ArmorHitMarkerTexture = LoadTexture(Path.Combine(texturePath, "armor_hit_marker.png")) ?? HitMarkerTexture;
                 ArmorBreakMarkerTexture = LoadTexture(Path.Combine(texturePath, "armor_break_marker.png")) ?? HitMarkerTexture;
 
-                // 加载连杀图标 (2-6连杀)
+                // 加载连杀图标 (2-6连杀)，支持非矩形图标
                 for (int i = 2; i <= 6; i++)
                 {
                     KillStreakTextures[i] = LoadTexture(Path.Combine(texturePath, $"kill_{i}_marker.png")) ?? KillMarkerTexture;
@@ -136,10 +144,31 @@ namespace HitMarkerPlugin
                 if (KillMarkerTexture == null) KillMarkerTexture = CreateDefaultKillMarker();
 
                 Logger.LogInfo("资源加载完成");
+
+                // 记录加载的纹理信息
+                LogTextureInfo("命中标记", HitMarkerTexture);
+                LogTextureInfo("击杀标记", KillMarkerTexture);
+                for (int i = 2; i <= 6; i++)
+                {
+                    LogTextureInfo($"{i}连杀标记", KillStreakTextures[i]);
+                }
             }
             catch (Exception e)
             {
                 Logger.LogError($"资源加载失败: {e.Message}");
+            }
+        }
+
+        // 添加纹理信息日志
+        private void LogTextureInfo(string name, Texture2D texture)
+        {
+            if (texture != null)
+            {
+                Logger.LogInfo($"{name}: {texture.width}x{texture.height}");
+            }
+            else
+            {
+                Logger.LogWarning($"{name}: 加载失败或为空");
             }
         }
 
@@ -512,7 +541,7 @@ namespace HitMarkerPlugin
 
         public static class DebugInfo
         {
-            public static int ApplyDamageInfoCount { get; set; }
+            public static int ReceiveDamageCount { get; set; }
             public static int ArmorDamageCount { get; set; }
             public static int KillEventCount { get; set; }
             public static int ValidHitCount { get; set; }
@@ -530,7 +559,7 @@ namespace HitMarkerPlugin
 
             public static void Reset()
             {
-                ApplyDamageInfoCount = 0;
+                ReceiveDamageCount = 0;
                 ArmorDamageCount = 0;
                 KillEventCount = 0;
                 ValidHitCount = 0;
@@ -585,6 +614,76 @@ namespace HitMarkerPlugin
                     return $"{Timestamp:HH:mm:ss} | 目标: {VictimName} | 阵营: {VictimSide} | 距离: {Distance:F1}m";
                 }
             }
+        }
+        // 添加命中点存储
+        private static Vector3 lastHitWorldPoint = Vector3.zero;
+        private static Vector2 lastHitScreenPoint = Vector2.zero;
+
+        // 添加摄像机引用
+        private static Camera mainCamera;
+
+        // 存储命中点信息
+        public static void StoreHitPoint(Vector3 worldPoint)
+        {
+            lastHitWorldPoint = worldPoint;
+            UpdateScreenPoint();
+        }
+
+        // 更新屏幕坐标
+        private static void UpdateScreenPoint()
+        {
+            if (mainCamera == null)
+            {
+                mainCamera = Camera.main;
+                if (mainCamera == null)
+                {
+                    // 尝试找到其他可用的摄像机
+                    var cameras = FindObjectsOfType<Camera>();
+                    foreach (var cam in cameras)
+                    {
+                        if (cam.isActiveAndEnabled && cam.gameObject.activeInHierarchy)
+                        {
+                            mainCamera = cam;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (mainCamera != null && lastHitWorldPoint != Vector3.zero)
+            {
+                Vector3 screenPoint = mainCamera.WorldToScreenPoint(lastHitWorldPoint);
+
+                // 检查点是否在屏幕前方
+                if (screenPoint.z > 0)
+                {
+                    lastHitScreenPoint = new Vector2(screenPoint.x, Screen.height - screenPoint.y);
+                }
+                else
+                {
+                    // 如果点在屏幕后方，使用屏幕中心作为后备
+                    lastHitScreenPoint = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+                }
+            }
+            else
+            {
+                // 后备方案：使用屏幕中心
+                lastHitScreenPoint = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+            }
+        }
+
+        // 获取最后命中的屏幕坐标
+        public static Vector2 GetLastHitScreenPoint()
+        {
+            UpdateScreenPoint(); // 确保坐标是最新的
+            return lastHitScreenPoint;
+        }
+
+        // 重置命中点（在游戏场景切换时调用）
+        public static void ResetHitPoint()
+        {
+            lastHitWorldPoint = Vector3.zero;
+            lastHitScreenPoint = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
         }
     }
 }

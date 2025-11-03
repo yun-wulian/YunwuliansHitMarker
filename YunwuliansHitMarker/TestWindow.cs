@@ -63,7 +63,7 @@ namespace HitMarkerPlugin
             GUILayout.Label("=== 调试信息 ===", GetLabelStyle());
 
             // 补丁调用统计
-            GUILayout.Label($"ApplyDamageInfo调用: {HitMarkerPlugin.DebugInfo.ApplyDamageInfoCount}", GetLabelStyle());
+            GUILayout.Label($"ApplyDamageInfo调用: {HitMarkerPlugin.DebugInfo.ReceiveDamageCount}", GetLabelStyle());
             GUILayout.Label($"ArmorDamage调用: {HitMarkerPlugin.DebugInfo.ArmorDamageCount}", GetLabelStyle());
             GUILayout.Label($"KillEvent调用: {HitMarkerPlugin.DebugInfo.KillEventCount}", GetLabelStyle());
 

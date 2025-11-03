@@ -12,13 +12,13 @@ namespace HitMarkerPlugin
 {
     // 监控伤害应用
     [HarmonyPatch(typeof(Player), "ReceiveDamage")]
-    class ApplyDamageInfoPatch
+    class ReceiveDamagePatch
     {
         static void Postfix(Player __instance, float damage, EBodyPart part, EDamageType type, float absorbed, MaterialType special)
         {
             try
             {
-                HitMarkerPlugin.DebugInfo.ApplyDamageInfoCount++;
+                HitMarkerPlugin.DebugInfo.ReceiveDamageCount++;
                 HitMarkerPlugin.DebugInfo.LastHitInfo = new HitMarkerPlugin.DebugInfo.HitData
                 {
                     Timestamp = DateTime.Now,
