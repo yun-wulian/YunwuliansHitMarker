@@ -18,9 +18,9 @@ namespace HitMarkerPlugin
         private const float KILL_STREAK_DURATION = 1f;
 
         // 动画阶段时长（占HIT_MARKER_DURATION的比例）
-        private const float FADE_IN_DURATION_RATIO = 0.35f; // 渐入阶段：0.03秒
+        private const float FADE_IN_DURATION_RATIO = 0.3f; // 渐入阶段：0.03秒
         private const float STABLE_DURATION_RATIO = 0.4f;   // 稳定阶段：0.1秒
-        private const float FADE_OUT_DURATION_RATIO = 0.25f; // 渐出阶段：0.07秒
+        private const float FADE_OUT_DURATION_RATIO = 0.3f; // 渐出阶段：0.07秒
 
         // 移除固定大小，使用配置
         private Vector2 killMarkerBasePosition = new Vector2(0.5f, 0.87f);
@@ -40,7 +40,7 @@ namespace HitMarkerPlugin
             public string markerType;
             public float rotation;
             public Coroutine coroutine;
-            public bool useHitPoint = false;
+            public bool useFireportPoint = false;
             public Vector2 originalSize; // 新增：存储原始尺寸
         }
         // 基础标记创建方法
@@ -58,7 +58,7 @@ namespace HitMarkerPlugin
                 markerType = type,
                 scale = Vector2.one * 2f,
                 rotation = UnityEngine.Random.Range(-10f, 10f),
-                useHitPoint = useHitPoint,
+                useFireportPoint = useHitPoint,
                 originalSize = originalSize
             };
         }
@@ -77,32 +77,36 @@ namespace HitMarkerPlugin
 
         // 修改显示方法，添加 useHitPoint 参数
         // 修改标记创建方法，记录原始尺寸
-        public void ShowHitMarker(bool useHitPoint = false)
+        public void ShowHitMarker(bool useHitPoint = true)
         {
             var marker = CreateBaseMarker(HitMarkerPlugin.HitMarkerTexture, "hit", useHitPoint);
             ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            ExternalAudioPlayer.Instance.PlayHitSound();
+            //ExternalAudioPlayer.Instance.PlayHitSound();
+            InternalAudioPlayer.Instance.PlayHitSound();
         }
 
-        public void ShowHeadshotMarker()
+        public void ShowHeadshotMarker(bool useHitPoint = true)
         {
-            var marker = CreateBaseMarker(HitMarkerPlugin.HeadshotMarkerTexture, "headshot", false);
+            var marker = CreateBaseMarker(HitMarkerPlugin.HeadshotMarkerTexture, "headshot", useHitPoint);
             ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            ExternalAudioPlayer.Instance.PlayHeadshotSound();
+            //ExternalAudioPlayer.Instance.PlayHeadshotSound();
+            InternalAudioPlayer.Instance.PlayHeadshotSound();
         }
 
-        public void ShowArmorHitMarker(bool useHitPoint = false)
+        public void ShowArmorHitMarker(bool useHitPoint = true)
         {
             var marker = CreateBaseMarker(HitMarkerPlugin.ArmorHitMarkerTexture, "armor_hit", useHitPoint);
             ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            ExternalAudioPlayer.Instance.PlayArmorHitSound();
+            //ExternalAudioPlayer.Instance.PlayArmorHitSound();
+            InternalAudioPlayer.Instance.PlayArmorHitSound();
         }
 
-        public void ShowArmorBreakMarker(bool useHitPoint = false)
+        public void ShowArmorBreakMarker(bool useHitPoint = true)
         {
             var marker = CreateBaseMarker(HitMarkerPlugin.ArmorBreakMarkerTexture, "armor_break", useHitPoint);
             ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            ExternalAudioPlayer.Instance.PlayArmorBreakSound();
+            //ExternalAudioPlayer.Instance.PlayArmorBreakSound();
+            InternalAudioPlayer.Instance.PlayArmorBreakSound();
         }
 
         public void ShowKillMarker()
@@ -114,7 +118,8 @@ namespace HitMarkerPlugin
                 HitMarkerPlugin.KillMarkerPositionY.Value
             );
             ShowKillMarkerInternal(marker, KILL_MARKER_DURATION);
-            ExternalAudioPlayer.Instance.PlayKillSound();
+            //ExternalAudioPlayer.Instance.PlayKillSound();
+            InternalAudioPlayer.Instance.PlayKillSound();
         }
 
         public void ShowHeadshotKillMarker()
@@ -126,7 +131,8 @@ namespace HitMarkerPlugin
                 HitMarkerPlugin.KillMarkerPositionY.Value
             );
             ShowKillMarkerInternal(marker, HEADSHOT_KILL_MARKER_DURATION);
-            ExternalAudioPlayer.Instance.PlayHeadshotKillSound();
+            //ExternalAudioPlayer.Instance.PlayHeadshotKillSound();
+            InternalAudioPlayer.Instance.PlayHeadshotKillSound();
         }
 
 
@@ -142,7 +148,8 @@ namespace HitMarkerPlugin
                 HitMarkerPlugin.KillMarkerPositionY.Value
             );
             ShowKillMarkerInternal(marker, KILL_STREAK_DURATION);
-            ExternalAudioPlayer.Instance.PlayKillStreakSound(streak);
+            //ExternalAudioPlayer.Instance.PlayKillStreakSound(streak);
+            InternalAudioPlayer.Instance.PlayKillStreakSound(streak);
         }
 
         private void ShowHitMarkerInternal(Marker marker, float duration)
@@ -314,57 +321,54 @@ namespace HitMarkerPlugin
 
             if (marker.isKillMarker)
             {
-                // 使用配置的位置
                 drawPosition = GetConfiguredKillMarkerPosition();
             }
-            else if (marker.useHitPoint)
+            else if (marker.useFireportPoint)
             {
-                drawPosition = HitMarkerPlugin.GetLastHitScreenPoint();
+                drawPosition = HitMarkerPlugin.GetFireportScreenPoint();
             }
             else
             {
                 drawPosition = GetScreenPosition(marker.basePosition);
             }
 
-            // 计算绘制尺寸
-            float baseSize;
-            if (HitMarkerPlugin.UseOriginalIconSize.Value && marker.originalSize != Vector2.zero)
-            {
-                // 使用原始尺寸 + 缩放
-                baseSize = Mathf.Max(marker.originalSize.x, marker.originalSize.y);
-            }
-            else
-            {
-                // 使用固定基础尺寸
-                baseSize = marker.isKillMarker ? 300f : 50f;
-            }
-
-            // 应用缩放系数
-            float sizeScale = marker.isKillMarker ?
-                HitMarkerPlugin.KillMarkerSizeScale.Value :
-                HitMarkerPlugin.HitMarkerSizeScale.Value;
-
-            float size = baseSize * marker.scale.x * sizeScale;
-
-            // 计算矩形，保持宽高比
             Rect drawRect;
+
             if (HitMarkerPlugin.UseOriginalIconSize.Value && marker.originalSize != Vector2.zero)
             {
-                // 保持原始宽高比
-                float aspectRatio = marker.originalSize.x / marker.originalSize.y;
-                float width = size * aspectRatio;
-                float height = size / aspectRatio;
+                // 直接使用原始尺寸，不进行任何额外的缩放计算
+                float originalWidth = marker.originalSize.x;
+                float originalHeight = marker.originalSize.y;
+
+                // 只应用动画缩放和配置缩放
+                float finalWidth = originalWidth * marker.scale.x;
+                float finalHeight = originalHeight * marker.scale.y;
+
+                // 应用配置的尺寸缩放
+                float sizeScale = marker.isKillMarker ?
+                    HitMarkerPlugin.KillMarkerSizeScale.Value :
+                    HitMarkerPlugin.HitMarkerSizeScale.Value;
+
+                finalWidth *= sizeScale;
+                finalHeight *= sizeScale;
 
                 drawRect = new Rect(
-                    drawPosition.x - width * 0.5f,
-                    drawPosition.y - height * 0.5f,
-                    width,
-                    height
+                    drawPosition.x - finalWidth * 0.5f,
+                    drawPosition.y - finalHeight * 0.5f,
+                    finalWidth,
+                    finalHeight
                 );
             }
             else
             {
-                // 正方形
+                // 非原始尺寸模式保持原有逻辑
+                float baseSize = marker.isKillMarker ? 300f : 50f;
+                float sizeScale = marker.isKillMarker ?
+                    HitMarkerPlugin.KillMarkerSizeScale.Value :
+                    HitMarkerPlugin.HitMarkerSizeScale.Value;
+
+                float size = baseSize * marker.scale.x * sizeScale;
+
                 drawRect = new Rect(
                     drawPosition.x - size * 0.5f,
                     drawPosition.y - size * 0.5f,
@@ -373,11 +377,10 @@ namespace HitMarkerPlugin
                 );
             }
 
-            // 应用透明度
+            // 其余绘制代码保持不变...
             Color originalColor = GUI.color;
             GUI.color = new Color(1f, 1f, 1f, marker.alpha);
 
-            // 应用旋转
             if (Mathf.Abs(marker.rotation) > 0.01f)
             {
                 Matrix4x4 matrixBackup = GUI.matrix;
