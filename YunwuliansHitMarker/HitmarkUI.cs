@@ -16,6 +16,12 @@ namespace HitMarkerPlugin
         // 击杀信息显示
         private KillInfoDisplay currentKillInfo;
         private const float KILL_INFO_DURATION = 2f; // 1.5秒显示 + 0.5秒淡出
+        private const float KILL_INFO_FLY_IN_DURATION = 0.05f;
+        private const float KILL_INFO_SHAKE_DURATION = 0.10f;
+        private const float KILL_INFO_START_SCALE = 1.22f;
+        private const float KILL_INFO_START_OFFSET_Y = 18f; // 像素：从下方轻微飞入
+        private const float KILL_INFO_SHAKE_INTENSITY = 3.5f; // 像素：抖动强度（克制，保证可读）
+        private const float KILL_INFO_SHAKE_FREQUENCY = 40f;
 
         private const float HIT_MARKER_DURATION = 0.2f;
         private const float KILL_MARKER_DURATION = 1f;
@@ -250,11 +256,43 @@ namespace HitMarkerPlugin
                 return;
             }
 
-            // 1.5秒显示，0.5秒淡出（从75%开始淡出）
             float progress = elapsed / KILL_INFO_DURATION;
+
+            float baseAlpha = 1f;
             if (progress > 0.75f)
             {
-                currentKillInfo.Alpha = 1f - ((progress - 0.75f) / 0.25f);
+                baseAlpha = 1f - ((progress - 0.75f) / 0.25f);
+            }
+
+            if (elapsed < KILL_INFO_FLY_IN_DURATION)
+            {
+                float t = elapsed / KILL_INFO_FLY_IN_DURATION;
+                float ease = EaseOutCubic(t);
+
+                currentKillInfo.Scale = Mathf.Lerp(KILL_INFO_START_SCALE, 1f, ease);
+                currentKillInfo.Offset = new Vector2(0f, Mathf.Lerp(KILL_INFO_START_OFFSET_Y, 0f, ease));
+
+                float appearAlpha = Mathf.Clamp01(t * 2f);
+                currentKillInfo.Alpha = baseAlpha * appearAlpha;
+            }
+            else if (elapsed < KILL_INFO_FLY_IN_DURATION + KILL_INFO_SHAKE_DURATION)
+            {
+                float t = (elapsed - KILL_INFO_FLY_IN_DURATION) / KILL_INFO_SHAKE_DURATION;
+
+                float shakeIntensity = (1f - t) * KILL_INFO_SHAKE_INTENSITY;
+                float shakeTime = Time.time * KILL_INFO_SHAKE_FREQUENCY;
+                float shakeX = Mathf.Sin(shakeTime * 1.2f) * shakeIntensity;
+                float shakeY = Mathf.Cos(shakeTime * 0.8f) * shakeIntensity;
+
+                currentKillInfo.Offset = new Vector2(shakeX, shakeY);
+                currentKillInfo.Scale = 1f + Mathf.Sin(shakeTime * 1.5f) * 0.02f;
+                currentKillInfo.Alpha = baseAlpha;
+            }
+            else
+            {
+                currentKillInfo.Offset = Vector2.zero;
+                currentKillInfo.Scale = 1f;
+                currentKillInfo.Alpha = baseAlpha;
             }
         }
 
@@ -438,6 +476,8 @@ namespace HitMarkerPlugin
             public bool IsHeadshot;
             public float StartTime;
             public float Alpha = 1f;
+            public float Scale = 1f;
+            public Vector2 Offset = Vector2.zero;
         }
 
         // 显示击杀信息
@@ -453,7 +493,9 @@ namespace HitMarkerPlugin
                 BodyPart = killData.BodyPart,
                 IsHeadshot = killData.IsHeadshot,
                 StartTime = Time.time,
-                Alpha = 1f
+                Alpha = 0f,
+                Scale = KILL_INFO_START_SCALE,
+                Offset = new Vector2(0f, KILL_INFO_START_OFFSET_Y)
             };
             HitMarkerPlugin.Logger.LogInfo($"ShowKillInfo: 创建击杀信息, VictimName={currentKillInfo.VictimName}");
         }
@@ -468,6 +510,8 @@ namespace HitMarkerPlugin
                 Screen.width * 0.5f + HitMarkerPlugin.KillInfoOffsetX.Value,
                 Screen.height * 0.5f + HitMarkerPlugin.KillInfoOffsetY.Value
             );
+
+            Vector2 animatedPos = killInfoPos + currentKillInfo.Offset;
 
             // 玩家名称样式
             GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
@@ -486,31 +530,50 @@ namespace HitMarkerPlugin
             };
             detailStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, currentKillInfo.Alpha);
 
-            // 绘制玩家名称
-            float nameWidth = 300f;
-            float nameHeight = 30f;
-            Rect nameRect = new Rect(
-                killInfoPos.x - nameWidth / 2,
-                killInfoPos.y,
-                nameWidth,
-                nameHeight
-            );
-            GUI.Label(nameRect, currentKillInfo.VictimName, nameStyle);
+            Matrix4x4 matrixBackup = GUI.matrix;
+            if (Mathf.Abs(currentKillInfo.Scale - 1f) > 0.001f)
+            {
+                GUIUtility.ScaleAroundPivot(new Vector2(currentKillInfo.Scale, currentKillInfo.Scale), animatedPos);
+            }
 
-            // 构建详情文本
-            string bodyPartName = GetBodyPartName(currentKillInfo.BodyPart);
-            string details = $"{bodyPartName} · {currentKillInfo.Distance:F0}m · {currentKillInfo.WeaponName}";
+            try
+            {
+                // 绘制玩家名称
+                float nameWidth = 300f;
+                float nameHeight = 30f;
+                Rect nameRect = new Rect(
+                    animatedPos.x - nameWidth / 2,
+                    animatedPos.y,
+                    nameWidth,
+                    nameHeight
+                );
+                GUI.Label(nameRect, currentKillInfo.VictimName, nameStyle);
 
-            // 绘制详情
-            float detailWidth = 400f;
-            float detailHeight = 25f;
-            Rect detailRect = new Rect(
-                killInfoPos.x - detailWidth / 2,
-                killInfoPos.y + nameHeight + 5f,
-                detailWidth,
-                detailHeight
-            );
-            GUI.Label(detailRect, details, detailStyle);
+                // 构建详情文本
+                string bodyPartName = GetBodyPartName(currentKillInfo.BodyPart);
+                string details = $"{bodyPartName} · {currentKillInfo.Distance:F0}m · {currentKillInfo.WeaponName}";
+
+                // 绘制详情
+                float detailWidth = 400f;
+                float detailHeight = 25f;
+                Rect detailRect = new Rect(
+                    animatedPos.x - detailWidth / 2,
+                    animatedPos.y + nameHeight + 5f,
+                    detailWidth,
+                    detailHeight
+                );
+                GUI.Label(detailRect, details, detailStyle);
+            }
+            finally
+            {
+                GUI.matrix = matrixBackup;
+            }
+        }
+
+        private static float EaseOutCubic(float t)
+        {
+            t = Mathf.Clamp01(t);
+            return 1f - Mathf.Pow(1f - t, 3f);
         }
 
         private string GetBodyPartName(EBodyPart bodyPart)
