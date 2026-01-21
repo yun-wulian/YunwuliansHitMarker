@@ -32,6 +32,12 @@ namespace HitMarkerPlugin
         public static ConfigEntry<float> KillMarkerSizeScale;
         public static ConfigEntry<float> HitMarkerSizeScale;
 
+        // 击杀信息配置
+        public static ConfigEntry<float> KillInfoOffsetX;
+        public static ConfigEntry<float> KillInfoOffsetY;
+        public static ConfigEntry<int> KillInfoNameFontSize;
+        public static ConfigEntry<int> KillInfoDetailFontSize;
+
         // 资源
         public static Texture2D HitMarkerTexture;
         public static Texture2D KillMarkerTexture;
@@ -44,7 +50,12 @@ namespace HitMarkerPlugin
         public static Texture2D[] KillStreakTextures = new Texture2D[7]; // 0-6，0不使用
 
         // UI管理器
-        private HitMarkerUI uiManager;
+        private HitMarkerUI _UIManager;
+        public HitMarkerUI UIManager
+        {
+            get => _UIManager;
+            set => _UIManager = value;
+        }
         private TestWindow testWindow;
 
         // 公开的Logger属性
@@ -70,7 +81,7 @@ namespace HitMarkerPlugin
             CreateConfig();
 
             // 初始化UI管理器
-            uiManager = gameObject.AddComponent<HitMarkerUI>();
+            _UIManager = gameObject.AddComponent<HitMarkerUI>();
             testWindow = gameObject.AddComponent<TestWindow>();
 
             // 应用Harmony补丁
@@ -102,12 +113,20 @@ namespace HitMarkerPlugin
             }
         }
 
+        // 公开的资源重新加载方法
+        public void ReloadResources()
+        {
+            Logger.LogInfo("重新加载资源");
+            LoadResources();
+        }
+
         private void Update()
         {
             // 检测测试窗口切换按键
             if (TestWindowToggleKey.Value.IsDown())
             {
                 ShowTestWindow.Value = !ShowTestWindow.Value;
+                Config.Save();
                 Logger.LogInfo($"测试窗口: {(ShowTestWindow.Value ? "显示" : "隐藏")}");
             }
 
@@ -133,6 +152,16 @@ namespace HitMarkerPlugin
 
             ShowTestWindow = Config.Bind("测试", "显示测试窗口", false, "是否显示测试窗口");
             TestWindowToggleKey = Config.Bind("测试", "测试窗口切换按键", new KeyboardShortcut(KeyCode.F10), "切换测试窗口显示/隐藏的按键");
+
+            // 击杀信息配置 - 相对于枪口位置的偏移
+            KillInfoOffsetX = Config.Bind("击杀信息", "X偏移", -200f,
+                new ConfigDescription("击杀信息相对于枪口的水平偏移（负值向左）", new AcceptableValueRange<float>(-500f, 500f)));
+            KillInfoOffsetY = Config.Bind("击杀信息", "Y偏移", 0f,
+                new ConfigDescription("击杀信息相对于枪口的垂直偏移（负值向上）", new AcceptableValueRange<float>(-500f, 500f)));
+            KillInfoNameFontSize = Config.Bind("击杀信息", "名称字号", 20,
+                new ConfigDescription("敌人名称的字号", new AcceptableValueRange<int>(10, 40)));
+            KillInfoDetailFontSize = Config.Bind("击杀信息", "详情字号", 14,
+                new ConfigDescription("详情信息的字号", new AcceptableValueRange<int>(8, 30)));
         }
 
         private void LoadResources()
@@ -285,7 +314,7 @@ namespace HitMarkerPlugin
         }
 
         // 处理击杀事件
-        public void OnKill(bool isHeadshot)
+        public void OnKill(bool isHeadshot, DebugInfo.KillData killData = null)
         {
             float currentTime = Time.time;
 
@@ -312,67 +341,78 @@ namespace HitMarkerPlugin
                 }
             }
 
+            // 显示击杀信息
+            if (killData != null && UIManager != null)
+            {
+                UIManager.ShowKillInfo(killData);
+            }
+
             lastKillTime = currentTime;
         }
 
         public void PlayHitEffect(bool usefireport = true)
         {
-            if (EnableHitMarker.Value && uiManager != null)
+            if (EnableHitMarker.Value && UIManager != null)
             {
-                uiManager.ShowHitMarker(usefireport);
+                Logger.LogInfo($"PlayHitEffect: HitMarkerTexture={HitMarkerTexture != null}");
+                UIManager.ShowHitMarker(usefireport);
+            }
+            else
+            {
+                Logger.LogWarning($"PlayHitEffect 跳过: EnableHitMarker={EnableHitMarker.Value}, UIManager={UIManager != null}");
             }
         }
 
         public void PlayKillEffect()
         {
-            if (EnableKillMarker.Value && uiManager != null)
+            if (EnableKillMarker.Value && UIManager != null)
             {
-                uiManager.ShowKillMarker();
+                UIManager.ShowKillMarker();
             }
         }
 
         public void PlayHeadshotEffect(bool usefireport = true)
         {
-            if (EnableHitMarker.Value && uiManager != null)
+            if (EnableHitMarker.Value && UIManager != null)
             {
                 Logger.LogInfo($"触发爆头命中效果");
-                uiManager.ShowHeadshotMarker(usefireport);
+                UIManager.ShowHeadshotMarker(usefireport);
             }
         }
 
         public void PlayHeadshotKillEffect()
         {
-            if (EnableKillMarker.Value && uiManager != null)
+            if (EnableKillMarker.Value && UIManager != null)
             {
                 Logger.LogInfo($"触发爆头击杀效果");
-                uiManager.ShowHeadshotKillMarker();
+                UIManager.ShowHeadshotKillMarker();
             }
         }
 
         public void PlayArmorHitEffect(bool usefireport = true)
         {
-            if (EnableHitMarker.Value && uiManager != null)
+            if (EnableHitMarker.Value && UIManager != null)
             {
                 Logger.LogInfo($"触发护甲命中效果");
-                uiManager.ShowArmorHitMarker(usefireport);
+                UIManager.ShowArmorHitMarker(usefireport);
             }
         }
 
         public void PlayArmorBreakEffect(bool usefireport = true)
         {
-            if (EnableHitMarker.Value && uiManager != null)
+            if (EnableHitMarker.Value && UIManager != null)
             {
                 Logger.LogInfo($"触发护甲击穿效果");
-                uiManager.ShowArmorBreakMarker(usefireport);
+                UIManager.ShowArmorBreakMarker(usefireport);
             }
         }
 
         public void PlayKillStreakEffect(int streak)
         {
-            if (EnableKillMarker.Value && uiManager != null)
+            if (EnableKillMarker.Value && UIManager != null)
             {
                 Logger.LogInfo($"触发{streak}连杀效果");
-                uiManager.ShowKillStreakMarker(streak);
+                UIManager.ShowKillStreakMarker(streak);
             }
         }
 
@@ -403,19 +443,49 @@ namespace HitMarkerPlugin
         public void TestKillEffect()
         {
             Logger.LogInfo("测试击杀效果");
-            PlayKillEffect();
+            var testKillData = new DebugInfo.KillData
+            {
+                Timestamp = DateTime.Now,
+                VictimName = "测试目标",
+                VictimSide = "Scav",
+                Distance = 50f,
+                WeaponName = "AK-74M",
+                BodyPart = EBodyPart.Chest,
+                IsHeadshot = false
+            };
+            OnKill(false, testKillData);
         }
 
         public void TestHeadshotKillEffect()
         {
-            Logger.LogInfo("测试爆头效果");
-            PlayHeadshotKillEffect();
+            Logger.LogInfo("测试爆头击杀效果");
+            var testKillData = new DebugInfo.KillData
+            {
+                Timestamp = DateTime.Now,
+                VictimName = "测试目标",
+                VictimSide = "PMC",
+                Distance = 100f,
+                WeaponName = "M4A1",
+                BodyPart = EBodyPart.Head,
+                IsHeadshot = true
+            };
+            OnKill(true, testKillData);
         }
 
         public void TestKillStreakEffect()
         {
             Logger.LogInfo("测试连杀效果");
-            OnKill(false);
+            var testKillData = new DebugInfo.KillData
+            {
+                Timestamp = DateTime.Now,
+                VictimName = "连杀目标",
+                VictimSide = "Scav",
+                Distance = 30f,
+                WeaponName = "MP5",
+                BodyPart = EBodyPart.Chest,
+                IsHeadshot = false
+            };
+            OnKill(false, testKillData);
         }
 
         // 获取当前连杀数（用于测试窗口显示）
@@ -683,10 +753,13 @@ namespace HitMarkerPlugin
                 public string VictimName { get; set; }
                 public string VictimSide { get; set; }
                 public float Distance { get; set; }
+                public string WeaponName { get; set; }
+                public EBodyPart BodyPart { get; set; }
+                public bool IsHeadshot { get; set; }
 
                 public override string ToString()
                 {
-                    return $"{Timestamp:HH:mm:ss} | 目标: {VictimName} | 阵营: {VictimSide} | 距离: {Distance:F1}m";
+                    return $"{Timestamp:HH:mm:ss} | 目标: {VictimName} | 阵营: {VictimSide} | 距离: {Distance:F1}m | 武器: {WeaponName} | 部位: {BodyPart}";
                 }
             }
         }
@@ -700,59 +773,77 @@ namespace HitMarkerPlugin
         // 更新屏幕坐标
         private static void UpdateScreenPoint()
         {
-            if (mainCamera == null)
+            try
             {
-                mainCamera = Camera.main;
                 if (mainCamera == null)
                 {
-                    // 尝试找到其他可用的摄像机
-                    var cameras = FindObjectsOfType<Camera>();
-                    foreach (var cam in cameras)
+                    mainCamera = Camera.main;
+                    if (mainCamera == null)
                     {
-                        if (cam.isActiveAndEnabled && cam.gameObject.activeInHierarchy)
+                        // 尝试找到其他可用的摄像机
+                        var cameras = FindObjectsOfType<Camera>();
+                        foreach (var cam in cameras)
                         {
-                            mainCamera = cam;
-                            break;
+                            if (cam.isActiveAndEnabled && cam.gameObject.activeInHierarchy)
+                            {
+                                mainCamera = cam;
+                                Logger.LogDebug($"使用备用摄像机: {cam.name}");
+                                break;
+                            }
                         }
                     }
                 }
-            }
-            FirearmController firearmController = LocalPlayerTracker.LocalPlayer.HandsController as FirearmController;
-            if (firearmController != null && firearmController.CurrentFireport != null && Camera.main != null)
-            {
-                Vector3 position = firearmController.CurrentFireport.position;
-                Vector3 weaponDirection = firearmController.WeaponDirection;
-                HitMarkerPlugin.FireportWorldPoint = position + (weaponDirection * 100f);
-            }
 
-            if (mainCamera != null && FireportWorldPoint != Vector3.zero)
-            {
-                float FPSCameraSSAARatio = (float)FPSCameraSSAA.GetOutputHeight() / (float)FPSCameraSSAA.GetInputHeight();
-                Vector3 screenPoint = mainCamera.WorldToScreenPoint(FireportWorldPoint) * FPSCameraSSAARatio;
-
-                // 检查点是否在屏幕内
-                if (screenPoint.z > 0)
+                // 添加 LocalPlayer 空值检查，防止在菜单或测试模式下崩溃
+                if (LocalPlayerTracker.LocalPlayer == null)
                 {
-                    // 转换为以屏幕中心为原点的坐标系（这是关键修正）
-                    Vector2 centeredPosition = new Vector2(
-                        screenPoint.x - (Screen.width / 2f),
-                        screenPoint.y - (Screen.height / 2f)
-                    );
+                    // LocalPlayer 为空时使用屏幕中心作为后备位置
+                    FireportScreenPoint = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+                    return;
+                }
 
-                    // 转换为GUI坐标（Y轴翻转）
-                    FireportScreenPoint = new Vector2(
-                        centeredPosition.x + (Screen.width / 2f),
-                        Screen.height - (centeredPosition.y + (Screen.height / 2f))
-                    );
+                FirearmController firearmController = LocalPlayerTracker.LocalPlayer.HandsController as FirearmController;
+                if (firearmController != null && firearmController.CurrentFireport != null && Camera.main != null)
+                {
+                    Vector3 position = firearmController.CurrentFireport.position;
+                    Vector3 weaponDirection = firearmController.WeaponDirection;
+                    HitMarkerPlugin.FireportWorldPoint = position + (weaponDirection * 100f);
+                }
+
+                if (mainCamera != null && FireportWorldPoint != Vector3.zero)
+                {
+                    float FPSCameraSSAARatio = (float)FPSCameraSSAA.GetOutputHeight() / (float)FPSCameraSSAA.GetInputHeight();
+                    Vector3 screenPoint = mainCamera.WorldToScreenPoint(FireportWorldPoint) * FPSCameraSSAARatio;
+
+                    // 检查点是否在屏幕内
+                    if (screenPoint.z > 0)
+                    {
+                        // 转换为以屏幕中心为原点的坐标系（这是关键修正）
+                        Vector2 centeredPosition = new Vector2(
+                            screenPoint.x - (Screen.width / 2f),
+                            screenPoint.y - (Screen.height / 2f)
+                        );
+
+                        // 转换为GUI坐标（Y轴翻转）
+                        FireportScreenPoint = new Vector2(
+                            centeredPosition.x + (Screen.width / 2f),
+                            Screen.height - (centeredPosition.y + (Screen.height / 2f))
+                        );
+                    }
+                    else
+                    {
+                        FireportScreenPoint = new Vector2(-1000, -1000);
+                    }
                 }
                 else
                 {
-                    FireportScreenPoint = new Vector2(-1000, -1000);
+                    // 后备方案：使用屏幕中心
+                    FireportScreenPoint = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
                 }
             }
-            else
+            catch (Exception e)
             {
-                // 后备方案：使用屏幕中心
+                Logger.LogError($"UpdateScreenPoint 异常: {e.Message}\n{e.StackTrace}");
                 FireportScreenPoint = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
             }
         }

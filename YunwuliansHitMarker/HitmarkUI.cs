@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using EFT;
 using static HitMarkerPlugin.HitMarkerPlugin;
 
 namespace HitMarkerPlugin
@@ -11,6 +12,10 @@ namespace HitMarkerPlugin
         // 独立的命中标记和击杀标记
         private Marker currentHitMarker;
         private Marker currentKillMarker;
+
+        // 击杀信息显示
+        private KillInfoDisplay currentKillInfo;
+        private const float KILL_INFO_DURATION = 2f; // 1.5秒显示 + 0.5秒淡出
 
         private const float HIT_MARKER_DURATION = 0.2f;
         private const float KILL_MARKER_DURATION = 1f;
@@ -39,12 +44,12 @@ namespace HitMarkerPlugin
             public bool isKillMarker;
             public string markerType;
             public float rotation;
-            public Coroutine coroutine;
             public bool useFireportPoint = false;
-            public Vector2 originalSize; // 新增：存储原始尺寸
+            public Vector2 originalSize;
+            public float duration; // 动画持续时间
         }
         // 基础标记创建方法
-        private Marker CreateBaseMarker(Texture2D texture, string type, bool useHitPoint)
+        private Marker CreateBaseMarker(Texture2D texture, string type, bool useHitPoint, float duration)
         {
             Vector2 originalSize = GetTextureOriginalSize(texture);
 
@@ -59,7 +64,8 @@ namespace HitMarkerPlugin
                 scale = Vector2.one * 2f,
                 rotation = UnityEngine.Random.Range(-10f, 10f),
                 useFireportPoint = useHitPoint,
-                originalSize = originalSize
+                originalSize = originalSize,
+                duration = duration
             };
         }
 
@@ -79,59 +85,53 @@ namespace HitMarkerPlugin
         // 修改标记创建方法，记录原始尺寸
         public void ShowHitMarker(bool useHitPoint = true)
         {
-            var marker = CreateBaseMarker(HitMarkerPlugin.HitMarkerTexture, "hit", useHitPoint);
-            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            //ExternalAudioPlayer.Instance.PlayHitSound();
+            var marker = CreateBaseMarker(HitMarkerPlugin.HitMarkerTexture, "hit", useHitPoint, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker);
             InternalAudioPlayer.Instance.PlayHitSound();
         }
 
         public void ShowHeadshotMarker(bool useHitPoint = true)
         {
-            var marker = CreateBaseMarker(HitMarkerPlugin.HeadshotMarkerTexture, "headshot", useHitPoint);
-            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            //ExternalAudioPlayer.Instance.PlayHeadshotSound();
+            var marker = CreateBaseMarker(HitMarkerPlugin.HeadshotMarkerTexture, "headshot", useHitPoint, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker);
             InternalAudioPlayer.Instance.PlayHeadshotSound();
         }
 
         public void ShowArmorHitMarker(bool useHitPoint = true)
         {
-            var marker = CreateBaseMarker(HitMarkerPlugin.ArmorHitMarkerTexture, "armor_hit", useHitPoint);
-            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            //ExternalAudioPlayer.Instance.PlayArmorHitSound();
+            var marker = CreateBaseMarker(HitMarkerPlugin.ArmorHitMarkerTexture, "armor_hit", useHitPoint, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker);
             InternalAudioPlayer.Instance.PlayArmorHitSound();
         }
 
         public void ShowArmorBreakMarker(bool useHitPoint = true)
         {
-            var marker = CreateBaseMarker(HitMarkerPlugin.ArmorBreakMarkerTexture, "armor_break", useHitPoint);
-            ShowHitMarkerInternal(marker, HIT_MARKER_DURATION);
-            //ExternalAudioPlayer.Instance.PlayArmorBreakSound();
+            var marker = CreateBaseMarker(HitMarkerPlugin.ArmorBreakMarkerTexture, "armor_break", useHitPoint, HIT_MARKER_DURATION);
+            ShowHitMarkerInternal(marker);
             InternalAudioPlayer.Instance.PlayArmorBreakSound();
         }
 
         public void ShowKillMarker()
         {
-            var marker = CreateBaseMarker(HitMarkerPlugin.KillMarkerTexture, "kill", false);
+            var marker = CreateBaseMarker(HitMarkerPlugin.KillMarkerTexture, "kill", false, KILL_MARKER_DURATION);
             marker.isKillMarker = true;
             marker.basePosition = new Vector2(
                 HitMarkerPlugin.KillMarkerPositionX.Value,
                 HitMarkerPlugin.KillMarkerPositionY.Value
             );
-            ShowKillMarkerInternal(marker, KILL_MARKER_DURATION);
-            //ExternalAudioPlayer.Instance.PlayKillSound();
+            ShowKillMarkerInternal(marker);
             InternalAudioPlayer.Instance.PlayKillSound();
         }
 
         public void ShowHeadshotKillMarker()
         {
-            var marker = CreateBaseMarker(HitMarkerPlugin.HeadshotKillMarkerTexture, "headshot_kill", false);
+            var marker = CreateBaseMarker(HitMarkerPlugin.HeadshotKillMarkerTexture, "headshot_kill", false, HEADSHOT_KILL_MARKER_DURATION);
             marker.isKillMarker = true;
             marker.basePosition = new Vector2(
                 HitMarkerPlugin.KillMarkerPositionX.Value,
                 HitMarkerPlugin.KillMarkerPositionY.Value
             );
-            ShowKillMarkerInternal(marker, HEADSHOT_KILL_MARKER_DURATION);
-            //ExternalAudioPlayer.Instance.PlayHeadshotKillSound();
+            ShowKillMarkerInternal(marker);
             InternalAudioPlayer.Instance.PlayHeadshotKillSound();
         }
 
@@ -141,106 +141,121 @@ namespace HitMarkerPlugin
         {
             if (streak < 2 || streak > 6) return;
 
-            var marker = CreateBaseMarker(HitMarkerPlugin.KillStreakTextures[streak], $"kill_streak_{streak}", false);
+            var marker = CreateBaseMarker(HitMarkerPlugin.KillStreakTextures[streak], $"kill_streak_{streak}", false, KILL_STREAK_DURATION);
             marker.isKillMarker = true;
             marker.basePosition = new Vector2(
                 HitMarkerPlugin.KillMarkerPositionX.Value,
                 HitMarkerPlugin.KillMarkerPositionY.Value
             );
-            ShowKillMarkerInternal(marker, KILL_STREAK_DURATION);
-            //ExternalAudioPlayer.Instance.PlayKillStreakSound(streak);
+            ShowKillMarkerInternal(marker);
             InternalAudioPlayer.Instance.PlayKillStreakSound(streak);
         }
 
-        private void ShowHitMarkerInternal(Marker marker, float duration)
+        private void ShowHitMarkerInternal(Marker marker)
         {
-            // 如果已经有命中标记在显示，停止之前的协程
-            if (currentHitMarker != null && currentHitMarker.coroutine != null)
-            {
-                StopCoroutine(currentHitMarker.coroutine);
-            }
-
             currentHitMarker = marker;
-            currentHitMarker.coroutine = StartCoroutine(HitMarkerAnimation(duration));
+            HitMarkerPlugin.Logger.LogInfo($"ShowHitMarkerInternal: 创建命中标记, texture={marker.texture != null}");
         }
 
-        private void ShowKillMarkerInternal(Marker marker, float duration)
+        private void ShowKillMarkerInternal(Marker marker)
         {
-            // 如果已经有击杀标记在显示，停止之前的协程
-            if (currentKillMarker != null && currentKillMarker.coroutine != null)
-            {
-                StopCoroutine(currentKillMarker.coroutine);
-            }
-
             currentKillMarker = marker;
-            currentKillMarker.coroutine = StartCoroutine(KillMarkerAnimation(duration));
+            HitMarkerPlugin.Logger.LogInfo($"ShowKillMarkerInternal: 创建击杀标记, texture={marker.texture != null}");
         }
 
-        private IEnumerator HitMarkerAnimation(float duration)
+        // Update 驱动的动画系统
+        private void Update()
         {
-            float startTime = Time.time;
-            float endTime = startTime + duration;
-
-            // 计算各阶段结束时间
-            float fadeInEndTime = startTime + duration * FADE_IN_DURATION_RATIO;
-            float stableEndTime = fadeInEndTime + duration * STABLE_DURATION_RATIO;
-            float fadeOutEndTime = endTime;
-
-            while (Time.time < endTime && currentHitMarker != null)
-            {
-                float currentTime = Time.time;
-                float progress = (currentTime - startTime) / duration;
-
-                if (currentTime < fadeInEndTime)
-                {
-                    // 渐入阶段：从2倍大小缩小到1倍，从半透明转为不透明
-                    float fadeInProgress = (currentTime - startTime) / (fadeInEndTime - startTime);
-                    currentHitMarker.scale = Vector2.one * (2f - fadeInProgress); // 2 -> 1
-                    currentHitMarker.alpha = fadeInProgress; // 0 -> 1
-                }
-                else if (currentTime < stableEndTime)
-                {
-                    // 稳定阶段：保持1倍大小和不透明
-                    currentHitMarker.scale = Vector2.one;
-                    currentHitMarker.alpha = 1f;
-                }
-                else if (currentTime < fadeOutEndTime)
-                {
-                    // 渐出阶段：保持1倍大小，从不透明转为透明
-                    float fadeOutProgress = (currentTime - stableEndTime) / (fadeOutEndTime - stableEndTime);
-                    currentHitMarker.scale = Vector2.one;
-                    currentHitMarker.alpha = 1f - fadeOutProgress; // 1 -> 0
-                }
-
-                yield return null;
-            }
-
-            currentHitMarker = null;
+            UpdateHitMarkerAnimation();
+            UpdateKillMarkerAnimation();
+            UpdateKillInfoAnimation();
         }
 
-        private IEnumerator KillMarkerAnimation(float duration)
+        private void UpdateHitMarkerAnimation()
         {
-            float startTime = Time.time;
-            float endTime = startTime + duration;
+            if (currentHitMarker == null) return;
 
-            while (Time.time < endTime && currentKillMarker != null)
+            float elapsed = Time.time - currentHitMarker.showTime;
+            float duration = currentHitMarker.duration;
+
+            if (elapsed >= duration)
             {
-                float progress = (Time.time - startTime) / duration;
-
-                // 击杀标记的特殊效果
-                ApplyKillMarkerEffects(progress);
-
-                // 淡出效果（只在最后10%开始淡出）
-                float fadeStart = 0.9f;
-                if (progress > fadeStart)
-                {
-                    currentKillMarker.alpha = 1f - ((progress - fadeStart) / (1f - fadeStart));
-                }
-
-                yield return null;
+                currentHitMarker = null;
+                return;
             }
 
-            currentKillMarker = null;
+            float progress = elapsed / duration;
+
+            // 计算各阶段结束点
+            float fadeInEnd = FADE_IN_DURATION_RATIO;
+            float stableEnd = fadeInEnd + STABLE_DURATION_RATIO;
+
+            if (progress < fadeInEnd)
+            {
+                // 渐入阶段：从2倍大小缩小到1倍，从透明转为不透明
+                float fadeInProgress = progress / fadeInEnd;
+                currentHitMarker.scale = Vector2.one * (2f - fadeInProgress);
+                currentHitMarker.alpha = fadeInProgress;
+            }
+            else if (progress < stableEnd)
+            {
+                // 稳定阶段：保持1倍大小和不透明
+                currentHitMarker.scale = Vector2.one;
+                currentHitMarker.alpha = 1f;
+            }
+            else
+            {
+                // 渐出阶段：保持1倍大小，从不透明转为透明
+                float fadeOutProgress = (progress - stableEnd) / FADE_OUT_DURATION_RATIO;
+                currentHitMarker.scale = Vector2.one;
+                currentHitMarker.alpha = 1f - fadeOutProgress;
+            }
+        }
+
+        private void UpdateKillMarkerAnimation()
+        {
+            if (currentKillMarker == null) return;
+
+            float elapsed = Time.time - currentKillMarker.showTime;
+            float duration = currentKillMarker.duration;
+
+            if (elapsed >= duration)
+            {
+                currentKillMarker = null;
+                return;
+            }
+
+            float progress = elapsed / duration;
+
+            // 击杀标记的特殊效果
+            ApplyKillMarkerEffects(progress);
+
+            // 淡出效果（只在最后10%开始淡出）
+            float fadeStart = 0.9f;
+            if (progress > fadeStart)
+            {
+                currentKillMarker.alpha = 1f - ((progress - fadeStart) / (1f - fadeStart));
+            }
+        }
+
+        private void UpdateKillInfoAnimation()
+        {
+            if (currentKillInfo == null) return;
+
+            float elapsed = Time.time - currentKillInfo.StartTime;
+
+            if (elapsed >= KILL_INFO_DURATION)
+            {
+                currentKillInfo = null;
+                return;
+            }
+
+            // 1.5秒显示，0.5秒淡出（从75%开始淡出）
+            float progress = elapsed / KILL_INFO_DURATION;
+            if (progress > 0.75f)
+            {
+                currentKillInfo.Alpha = 1f - ((progress - 0.75f) / 0.25f);
+            }
         }
 
         private void ApplyKillMarkerEffects(float progress)
@@ -306,16 +321,32 @@ namespace HitMarkerPlugin
 
         private void OnGUI()
         {
-            // 绘制命中标记（如果有）
-            DrawMarker(currentHitMarker);
+            try
+            {
+                // 绘制命中标记（如果有）
+                DrawMarker(currentHitMarker);
 
-            // 绘制击杀标记（如果有）
-            DrawMarker(currentKillMarker);
+                // 绘制击杀标记（如果有）
+                DrawMarker(currentKillMarker);
+
+                // 绘制击杀信息（如果有）
+                DrawKillInfo();
+            }
+            catch (Exception e)
+            {
+                HitMarkerPlugin.Logger.LogError($"OnGUI 渲染异常: {e.Message}\n{e.StackTrace}");
+            }
         }
         // 绘制方法
         private void DrawMarker(Marker marker)
         {
-            if (marker == null || marker.texture == null) return;
+            if (marker == null) return;
+
+            if (marker.texture == null)
+            {
+                HitMarkerPlugin.Logger.LogWarning($"DrawMarker: marker.texture 为 null, 类型: {marker.markerType}");
+                return;
+            }
 
             Vector2 drawPosition;
 
@@ -395,6 +426,106 @@ namespace HitMarkerPlugin
             }
 
             GUI.color = originalColor;
+        }
+
+        // 击杀信息显示类
+        private class KillInfoDisplay
+        {
+            public string VictimName;
+            public string WeaponName;
+            public float Distance;
+            public EBodyPart BodyPart;
+            public bool IsHeadshot;
+            public float StartTime;
+            public float Alpha = 1f;
+        }
+
+        // 显示击杀信息
+        public void ShowKillInfo(DebugInfo.KillData killData)
+        {
+            if (killData == null) return;
+
+            currentKillInfo = new KillInfoDisplay
+            {
+                VictimName = killData.VictimName ?? "未知",
+                WeaponName = killData.WeaponName ?? "未知",
+                Distance = killData.Distance,
+                BodyPart = killData.BodyPart,
+                IsHeadshot = killData.IsHeadshot,
+                StartTime = Time.time,
+                Alpha = 1f
+            };
+            HitMarkerPlugin.Logger.LogInfo($"ShowKillInfo: 创建击杀信息, VictimName={currentKillInfo.VictimName}");
+        }
+
+        // 绘制击杀信息
+        private void DrawKillInfo()
+        {
+            if (currentKillInfo == null) return;
+
+            // 固定位置：屏幕中心偏移
+            Vector2 killInfoPos = new Vector2(
+                Screen.width * 0.5f + HitMarkerPlugin.KillInfoOffsetX.Value,
+                Screen.height * 0.5f + HitMarkerPlugin.KillInfoOffsetY.Value
+            );
+
+            // 玩家名称样式
+            GUIStyle nameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = HitMarkerPlugin.KillInfoNameFontSize.Value,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter
+            };
+            nameStyle.normal.textColor = new Color(1f, 0.3f, 0.3f, currentKillInfo.Alpha);
+
+            // 详情样式
+            GUIStyle detailStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = HitMarkerPlugin.KillInfoDetailFontSize.Value,
+                alignment = TextAnchor.MiddleCenter
+            };
+            detailStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, currentKillInfo.Alpha);
+
+            // 绘制玩家名称
+            float nameWidth = 300f;
+            float nameHeight = 30f;
+            Rect nameRect = new Rect(
+                killInfoPos.x - nameWidth / 2,
+                killInfoPos.y,
+                nameWidth,
+                nameHeight
+            );
+            GUI.Label(nameRect, currentKillInfo.VictimName, nameStyle);
+
+            // 构建详情文本
+            string bodyPartName = GetBodyPartName(currentKillInfo.BodyPart);
+            string details = $"{bodyPartName} · {currentKillInfo.Distance:F0}m · {currentKillInfo.WeaponName}";
+
+            // 绘制详情
+            float detailWidth = 400f;
+            float detailHeight = 25f;
+            Rect detailRect = new Rect(
+                killInfoPos.x - detailWidth / 2,
+                killInfoPos.y + nameHeight + 5f,
+                detailWidth,
+                detailHeight
+            );
+            GUI.Label(detailRect, details, detailStyle);
+        }
+
+        private string GetBodyPartName(EBodyPart bodyPart)
+        {
+            switch (bodyPart)
+            {
+                case EBodyPart.Head: return "爆头";
+                case EBodyPart.Chest: return "胸部";
+                case EBodyPart.Stomach: return "腹部";
+                case EBodyPart.LeftArm: return "左臂";
+                case EBodyPart.RightArm: return "右臂";
+                case EBodyPart.LeftLeg: return "左腿";
+                case EBodyPart.RightLeg: return "右腿";
+                default: return bodyPart.ToString();
+            }
         }
     }
 }

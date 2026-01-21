@@ -156,6 +156,7 @@ namespace HitMarkerPlugin
             if (GUILayout.Button("关闭窗口", GetButtonStyle()))
             {
                 HitMarkerPlugin.ShowTestWindow.Value = false;
+                HitMarkerPlugin.Instance.Config.Save();
             }
 
             GUILayout.EndVertical();

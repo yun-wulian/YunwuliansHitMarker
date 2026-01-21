@@ -348,7 +348,9 @@ namespace HitMarkerPlugin
                         return;
                     }
 
-                    if (damageInfo.Player?.iPlayer?.IsYourPlayer == true)
+                    // 关键修复：添加 damageInfoIsLocal 检查
+                    // damageInfoIsLocal == true 表示本地玩家的护甲被击中，不应触发效果
+                    if (!damageInfoIsLocal && damageInfo.Player?.iPlayer?.IsYourPlayer == true)
                     {
                         HitMarkerPlugin.DebugInfo.ValidHitCount++;
 
@@ -390,21 +392,46 @@ namespace HitMarkerPlugin
 
                 if (IsKillByLocalPlayer(aggressor))
                 {
+                    var localPlayer = LocalPlayerTracker.LocalPlayer;
                     bool isHeadshot = HitMarkerPlugin.DebugInfo.LastHitInfo?.BodyPart == EBodyPart.Head.ToString();
+                    EBodyPart bodyPart = EBodyPart.Chest;
+                    string weaponName = "未知";
+
+                    // 尝试从 LastDamageInfo 获取武器和部位信息
+                    try
+                    {
+                        var lastDamageInfo = Traverse.Create(__instance).Field("LastDamageInfo").GetValue<DamageInfoStruct>();
+                        if (lastDamageInfo.Weapon != null)
+                        {
+                            weaponName = lastDamageInfo.Weapon.ShortName?.Localized()
+                                ?? lastDamageInfo.Weapon.Name?.Localized()
+                                ?? "未知";
+                        }
+
+                        var lastBodyPart = Traverse.Create(__instance).Field("LastBodyPart").GetValue<EBodyPart>();
+                        bodyPart = lastBodyPart;
+                        isHeadshot = bodyPart == EBodyPart.Head;
+                    }
+                    catch { }
+
+                    float distance = localPlayer != null
+                        ? Vector3.Distance(localPlayer.Position, __instance.Position)
+                        : 0f;
 
                     HitMarkerPlugin.DebugInfo.LastKillInfo = new HitMarkerPlugin.DebugInfo.KillData
                     {
                         Timestamp = DateTime.Now,
                         VictimName = __instance.Profile.Nickname,
                         VictimSide = __instance.Side.ToString(),
-                        Distance = LocalPlayerTracker.LocalPlayer != null
-                            ? Vector3.Distance(LocalPlayerTracker.LocalPlayer.Position, __instance.Position)
-                            : 0f
+                        Distance = distance,
+                        WeaponName = weaponName,
+                        BodyPart = bodyPart,
+                        IsHeadshot = isHeadshot
                     };
 
-                    HitMarkerPlugin.Logger.LogInfo($"击杀确认: 本地玩家击杀了 {__instance.Profile.Nickname}, 爆头: {isHeadshot}");
+                    HitMarkerPlugin.Logger.LogInfo($"击杀确认: 本地玩家击杀了 {__instance.Profile.Nickname}, 爆头: {isHeadshot}, 武器: {weaponName}");
 
-                    HitMarkerPlugin.Instance?.OnKill(isHeadshot);
+                    HitMarkerPlugin.Instance?.OnKill(isHeadshot, HitMarkerPlugin.DebugInfo.LastKillInfo);
                     HitMarkerPlugin.DebugInfo.TotalKills++;
                 }
                 else
@@ -450,12 +477,19 @@ namespace HitMarkerPlugin
                         HitMarkerPlugin.Instance.gameObject.AddComponent<DamageEventProcessor>();
                     }
 
-                    // 重新初始化UI组件
-                    var uiManager = HitMarkerPlugin.Instance.GetComponent<HitMarkerUI>();
+                    // 重新初始化UI组件并同步引用
+                    var uiManager = HitMarkerPlugin.Instance?.GetComponent<HitMarkerUI>();
                     if (uiManager == null)
                     {
                         HitMarkerPlugin.Logger.LogInfo("重新创建HitMarkerUI");
-                        HitMarkerPlugin.Instance.gameObject.AddComponent<HitMarkerUI>();
+                        uiManager = HitMarkerPlugin.Instance?.gameObject.AddComponent<HitMarkerUI>();
+                    }
+
+                    // 同步 UIManager 引用
+                    if (uiManager != null && HitMarkerPlugin.Instance != null)
+                    {
+                        HitMarkerPlugin.Instance.UIManager = uiManager;
+                        HitMarkerPlugin.Logger.LogInfo($"PlayerInit: UIManager 已同步, enabled={uiManager.enabled}");
                     }
                 }
             }
@@ -504,8 +538,39 @@ namespace HitMarkerPlugin
         {
             try
             {
-                HitMarkerPlugin.Logger.LogInfo("战局开始，恢复音频系统");
+                HitMarkerPlugin.Logger.LogInfo("战局开始，检查资源状态");
 
+                // 检查纹理资源是否有效
+                if (HitMarkerPlugin.HitMarkerTexture == null)
+                {
+                    HitMarkerPlugin.Logger.LogWarning("HitMarkerTexture 为 null，重新加载资源");
+                    HitMarkerPlugin.Instance?.ReloadResources();
+                }
+                else
+                {
+                    HitMarkerPlugin.Logger.LogInfo($"HitMarkerTexture 有效: {HitMarkerPlugin.HitMarkerTexture.width}x{HitMarkerPlugin.HitMarkerTexture.height}");
+                }
+
+                // 检查 UI 组件并同步引用
+                var uiManager = HitMarkerPlugin.Instance?.GetComponent<HitMarkerUI>();
+                if (uiManager == null)
+                {
+                    HitMarkerPlugin.Logger.LogWarning("HitMarkerUI 组件不存在，重新创建");
+                    uiManager = HitMarkerPlugin.Instance?.gameObject.AddComponent<HitMarkerUI>();
+                }
+
+                // 同步 UIManager 引用
+                if (uiManager != null && HitMarkerPlugin.Instance != null)
+                {
+                    HitMarkerPlugin.Instance.UIManager = uiManager;
+                    HitMarkerPlugin.Logger.LogInfo($"UIManager 已同步, enabled={uiManager.enabled}");
+                }
+                else
+                {
+                    HitMarkerPlugin.Logger.LogError("UIManager 同步失败");
+                }
+
+                // 重新加载音频
                 if (HitMarkerPlugin.Instance != null)
                 {
                     HitMarkerPlugin.Instance.Invoke("ReloadAudioInRaid", 3f);
